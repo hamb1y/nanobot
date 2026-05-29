@@ -6,6 +6,7 @@ import ipaddress
 import re
 import socket
 from contextlib import suppress
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 _BLOCKED_NETWORKS = [
@@ -24,6 +25,14 @@ _BLOCKED_NETWORKS = [
 _URL_RE = re.compile(r"https?://[^\s\"'`;|<>]+", re.IGNORECASE)
 
 _allowed_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+
+
+@dataclass(frozen=True)
+class ResolvedTarget:
+    """A URL hostname resolved and validated for outbound connections."""
+
+    hostname: str
+    addresses: tuple[str, ...]
 
 
 def configure_ssrf_whitelist(cidrs: list[str]) -> None:
@@ -61,20 +70,60 @@ def validate_url_target(url: str) -> tuple[bool, str]:
     if not hostname:
         return False, "Missing hostname"
 
+    target, error = resolve_url_target(url)
+    if target is None:
+        return False, error
+    return True, ""
+
+
+def resolve_hostname_for_outbound(hostname: str) -> tuple[ResolvedTarget | None, str]:
+    """Resolve a hostname and return only addresses that are safe to connect to.
+
+    Every answer is validated, not just the selected address. This avoids
+    connecting to an attacker-controlled hostname that mixes public and private
+    answers and lets the client pick the private one.
+    """
     try:
         infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except socket.gaierror:
-        return False, f"Cannot resolve hostname: {hostname}"
+        return None, f"Cannot resolve hostname: {hostname}"
 
+    addresses: list[str] = []
+    seen: set[str] = set()
     for info in infos:
         try:
             addr = ipaddress.ip_address(info[4][0])
         except ValueError:
             continue
         if _is_private(addr):
-            return False, f"Blocked: {hostname} resolves to private/internal address {addr}"
+            return None, f"Blocked: {hostname} resolves to private/internal address {addr}"
+        addr_text = str(addr)
+        if addr_text not in seen:
+            seen.add(addr_text)
+            addresses.append(addr_text)
 
-    return True, ""
+    if not addresses:
+        return None, f"Cannot resolve hostname: {hostname}"
+    return ResolvedTarget(hostname=hostname, addresses=tuple(addresses)), ""
+
+
+def resolve_url_target(url: str) -> tuple[ResolvedTarget | None, str]:
+    """Validate URL syntax and resolve its hostname to safe outbound addresses."""
+    try:
+        p = urlparse(url)
+    except Exception as e:
+        return None, str(e)
+
+    if p.scheme not in ("http", "https"):
+        return None, f"Only http/https allowed, got '{p.scheme or 'none'}'"
+    if not p.netloc:
+        return None, "Missing domain"
+
+    hostname = p.hostname
+    if not hostname:
+        return None, "Missing hostname"
+
+    return resolve_hostname_for_outbound(hostname)
 
 
 def validate_resolved_url(url: str) -> tuple[bool, str]:
