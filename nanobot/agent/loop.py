@@ -87,6 +87,10 @@ if TYPE_CHECKING:
     )
     from nanobot.cron.service import CronService
 
+
+_ALLOWED_SYSTEM_SENDERS = frozenset({"subagent", "webui-settings", "cron"})
+
+
 class TurnState(Enum):
     RESTORE = auto()
     COMPACT = auto()
@@ -1323,6 +1327,9 @@ class AgentLoop:
         self._refresh_provider_snapshot()
 
         if msg.channel == "system":
+            if msg.sender_id not in _ALLOWED_SYSTEM_SENDERS:
+                logger.warning("Dropping system message from unrecognized sender {}", msg.sender_id)
+                return None
             return await self._process_system_message(
                 msg,
                 session_key=session_key,
