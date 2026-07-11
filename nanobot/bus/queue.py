@@ -4,6 +4,8 @@ import asyncio
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 
+DEFAULT_QUEUE_MAXSIZE = 1000
+
 
 class MessageBus:
     """
@@ -13,9 +15,11 @@ class MessageBus:
     them and pushes responses to the outbound queue.
     """
 
-    def __init__(self):
-        self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
-        self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
+    def __init__(self, maxsize: int = DEFAULT_QUEUE_MAXSIZE):
+        if maxsize <= 0:
+            raise ValueError("maxsize must be positive")
+        self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue(maxsize=maxsize)
+        self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue(maxsize=maxsize)
 
     async def publish_inbound(self, msg: InboundMessage) -> None:
         """Publish a message from a channel to the agent."""
