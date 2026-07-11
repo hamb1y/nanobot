@@ -99,6 +99,7 @@ class WebSocketConfig(Base):
     max_message_bytes: int = Field(default=37_748_736, ge=1024, le=41_943_040)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
+    max_connections: int = Field(default=100, ge=1, le=10_000)
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
 
@@ -293,6 +294,7 @@ class WebSocketChannel(BaseChannel):
         self._conn_default: dict[Any, str] = {}
         self._stop_event: asyncio.Event | None = None
         self._server_task: asyncio.Task[None] | None = None
+        self._active_connections = 0
 
         self.gateway = gateway
         self._http_router = gateway.http
@@ -397,6 +399,8 @@ class WebSocketChannel(BaseChannel):
         # WebSocket upgrade — channel handles this itself
         expected_ws = self._expected_path()
         if got == expected_ws and _is_websocket_upgrade(request):
+            if self._active_connections >= self.config.max_connections:
+                return connection.respond(503, "WebSocket connection limit reached")
             client_id = _query_first(query, "client_id") or ""
             if len(client_id) > 128:
                 client_id = client_id[:128]
@@ -448,7 +452,14 @@ class WebSocketChannel(BaseChannel):
             return await self._dispatch_http(connection, request)
 
         async def handler(connection: ServerConnection) -> None:
-            await self._connection_loop(connection)
+            if self._active_connections >= self.config.max_connections:
+                await connection.close(code=1013, reason="connection limit reached")
+                return
+            self._active_connections += 1
+            try:
+                await self._connection_loop(connection)
+            finally:
+                self._active_connections -= 1
 
         self.logger.info(
             "WebSocket server listening on {}",
