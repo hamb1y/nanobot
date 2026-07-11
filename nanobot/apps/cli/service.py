@@ -40,6 +40,12 @@ _SAFE_NAME_RE = re.compile(r"[^a-z0-9_-]+")
 _SAFE_NPM_DIR_RE = re.compile(r"^[a-z0-9._-]+$", re.IGNORECASE)
 _MENTION_RE = re.compile(r"(^|[\s([{])@([a-z0-9_-]+)\b", re.IGNORECASE)
 _SHELL_META_CHARS = ("|", "&&", "||", ";", "$(", "`", ">", "<")
+_SAFE_APP_ENV_KEYS = frozenset({
+    "PATH", "HOME", "LANG", "TERM", "PYTHONUNBUFFERED",
+    "SYSTEMROOT", "COMSPEC", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "TEMP", "TMP", "PATHEXT", "APPDATA", "LOCALAPPDATA", "ProgramData",
+    "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+})
 _ENDORSEMENT_WORD_RE = re.compile(r"\bofficial\s+", re.IGNORECASE)
 _ARTIFACT_EXTENSIONS = frozenset({
     ".csv",
@@ -946,7 +952,17 @@ class CliAppManager:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=self._build_app_env(),
         )
+
+    @staticmethod
+    def _build_app_env() -> dict[str, str]:
+        """Build a minimal environment for installed CLI applications."""
+        return {
+            key: value
+            for key, value in os.environ.items()
+            if key in _SAFE_APP_ENV_KEYS
+        }
 
     def _installed_entry(self, app: dict[str, Any]) -> dict[str, Any]:
         entry_point = str(app.get("entry_point") or "")
@@ -1333,7 +1349,7 @@ Use the `run_cli_app` tool with `name="{name}"` for command execution. Do not in
                 capture_output=True,
                 text=True,
                 timeout=effective_timeout,
-                env=os.environ.copy(),
+                env=self._build_app_env(),
             )
         except subprocess.TimeoutExpired:
             return f"CLI app '{name}' timed out after {effective_timeout}s"
