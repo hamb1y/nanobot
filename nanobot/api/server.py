@@ -12,6 +12,7 @@ import hmac
 import json as _json
 import time
 import uuid
+from collections import defaultdict
 from typing import Any
 
 from aiohttp import web
@@ -397,6 +398,9 @@ def create_app(
     model_name: str = "nanobot",
     request_timeout: float = 120.0,
     api_key: str = "",
+    rate_limit_requests: int = 10,
+    rate_limit_window_seconds: float = 1.0,
+    max_concurrent_requests: int = 100,
 ) -> web.Application:
     """Create the aiohttp application.
 
@@ -406,11 +410,16 @@ def create_app(
         request_timeout: Per-request timeout in seconds.
         api_key: Optional API key for Bearer-token authentication.
     """
+    if rate_limit_requests <= 0 or rate_limit_window_seconds <= 0 or max_concurrent_requests <= 0:
+        raise ValueError("API rate and concurrency limits must be positive")
     app = web.Application(client_max_size=20 * 1024 * 1024)  # 20MB for base64 images
     app["agent_loop"] = agent_loop
     app["model_name"] = model_name
     app["request_timeout"] = request_timeout
     app["session_locks"] = {}  # per-user locks, keyed by session_key
+    app["rate_limit_state"] = defaultdict(lambda: [0.0, 0])
+    app["rate_limit_lock"] = asyncio.Lock()
+    app["request_semaphore"] = asyncio.Semaphore(max_concurrent_requests)
 
     @web.middleware
     async def auth_middleware(request: web.Request, handler) -> web.StreamResponse:
@@ -427,6 +436,35 @@ def create_app(
         return await handler(request)
 
     app.middlewares.append(auth_middleware)
+
+    @web.middleware
+    async def rate_limit_middleware(request: web.Request, handler) -> web.StreamResponse:
+        if request.path != "/v1/chat/completions":
+            return await handler(request)
+        client_key = request.remote or "unknown"
+        now = time.monotonic()
+        async with app["rate_limit_lock"]:
+            window_start, count = app["rate_limit_state"][client_key]
+            if now - window_start >= rate_limit_window_seconds:
+                window_start, count = now, 0
+            if count >= rate_limit_requests:
+                retry_after = max(1, int(rate_limit_window_seconds - (now - window_start) + 0.999))
+                response = _error_json(429, "Rate limit exceeded", err_type="rate_limit_error")
+                response.headers["Retry-After"] = str(retry_after)
+                return response
+            app["rate_limit_state"][client_key] = [window_start, count + 1]
+        semaphore: asyncio.Semaphore = app["request_semaphore"]
+        if semaphore.locked():
+            response = _error_json(429, "Too many concurrent requests", err_type="rate_limit_error")
+            response.headers["Retry-After"] = "1"
+            return response
+        await semaphore.acquire()
+        try:
+            return await handler(request)
+        finally:
+            semaphore.release()
+
+    app.middlewares.append(rate_limit_middleware)
 
     app.router.add_post("/v1/chat/completions", handle_chat_completions)
     app.router.add_get("/v1/models", handle_models)

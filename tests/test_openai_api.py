@@ -129,6 +129,31 @@ async def test_api_key_protects_api_routes_but_not_health(aiohttp_client, mock_a
 
 @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not installed")
 @pytest.mark.asyncio
+async def test_chat_rate_limit_returns_429(aiohttp_client, mock_agent) -> None:
+    app = create_app(
+        mock_agent,
+        model_name="test-model",
+        rate_limit_requests=1,
+        rate_limit_window_seconds=60,
+    )
+    client = await aiohttp_client(app)
+
+    first = await client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "one"}]},
+    )
+    second = await client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "two"}]},
+    )
+
+    assert first.status == 200
+    assert second.status == 429
+    assert second.headers["Retry-After"] == "60"
+
+
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not installed")
+@pytest.mark.asyncio
 async def test_no_user_message_returns_400(aiohttp_client, app) -> None:
     client = await aiohttp_client(app)
     resp = await client.post(
