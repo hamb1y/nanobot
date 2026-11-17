@@ -19,10 +19,18 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("169.254.0.0/16"),   # link-local / cloud metadata
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("192.0.2.0/24"),     # TEST-NET-1 (documentation)
+    ipaddress.ip_network("198.18.0.0/15"),    # benchmarking (RFC 2544)
+    ipaddress.ip_network("198.51.100.0/24"),  # TEST-NET-2 (documentation)
+    ipaddress.ip_network("203.0.113.0/24"),   # TEST-NET-3 (documentation)
+    ipaddress.ip_network("224.0.0.0/4"),      # IPv4 multicast
+    ipaddress.ip_network("240.0.0.0/4"),      # reserved, includes 255.255.255.255 (broadcast)
+    ipaddress.ip_network("2001:db8::/32"),    # IPv6 documentation
     ipaddress.ip_network("::/128"),            # unspecified; may route to local host
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),          # unique local
     ipaddress.ip_network("fe80::/10"),         # link-local v6
+    ipaddress.ip_network("ff00::/8"),          # IPv6 multicast
 ]
 
 _URL_RE = re.compile(r"https?://[^\s\"'`;|<>]+", re.IGNORECASE)

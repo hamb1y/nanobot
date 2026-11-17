@@ -85,6 +85,42 @@ def test_blocks_private_ipv4(ip: str, label: str):
         assert "private" in err.lower() or "blocked" in err.lower()
 
 
+@pytest.mark.parametrize("ip,label", [
+    ("255.255.255.255", "broadcast"),
+    ("239.1.1.1", "multicast"),
+    ("240.0.0.1", "reserved"),
+    ("192.0.2.5", "test_net_1"),
+    ("198.51.100.5", "test_net_2"),
+    ("203.0.113.5", "test_net_3"),
+    ("198.18.0.1", "benchmarking"),
+])
+def test_blocks_special_purpose_ipv4(ip: str, label: str):
+    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve("evil.com", [ip])):
+        ok, err = validate_url_target("http://evil.com/path")
+        assert not ok, f"Should block {label} ({ip})"
+        assert "private" in err.lower() or "blocked" in err.lower()
+
+
+def test_blocks_special_purpose_literals():
+    for url in (
+        "https://255.255.255.255/",
+        "https://239.1.1.1/",
+        "https://203.0.113.5/",
+        "https://198.18.0.1/",
+    ):
+        ok, err = validate_url_target(url)
+        assert not ok, f"Should block literal {url}"
+        assert "private" in err.lower() or "blocked" in err.lower()
+
+
+def test_blocks_special_purpose_ipv6():
+    for ip in ("ff02::1", "2001:db8::5"):
+        with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_v6("evil.com", [ip])):
+            ok, err = validate_url_target("http://evil.com/")
+            assert not ok, f"Should block IPv6 {ip}"
+            assert "private" in err.lower() or "blocked" in err.lower()
+
+
 def test_blocks_ipv6_loopback():
     def _resolver(hostname, port, family=0, type_=0):
         return [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0))]
