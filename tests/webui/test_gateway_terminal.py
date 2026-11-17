@@ -25,3 +25,14 @@ def test_terminal_probe_is_private_stable_and_does_not_issue_credentials():
         assert "no-store" in response.headers["Cache-Control"]
     assert not handler.tokens.api_tokens and not handler.tokens.issued_tokens
     assert GatewayTokenStore().instance_id != handler.tokens.instance_id
+
+
+def test_check_api_token_rejects_query_string_tokens():
+    store = GatewayTokenStore()
+    store.api_tokens["nbwt_fixture"] = float("inf")
+    bearer = Request(
+        "/api/sessions", Headers({"Authorization": "Bearer nbwt_fixture"})
+    )
+    assert store.check_api_token(bearer) is True
+    query = Request("/api/sessions?token=nbwt_fixture", Headers({}))
+    assert store.check_api_token(query) is False
