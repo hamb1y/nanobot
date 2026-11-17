@@ -34,6 +34,8 @@ dependencies = [
     "yarl>=1.17.0,<2.0.0",
     "cryptography>=46.0.0",
     "sigstore==4.5.0",
+    # pyasn1 0.6.4 has known CVEs; keep the floor above it (within sigstore's range).
+    "pyasn1>=0.6.5",
     "ddgs>=9.16.1,<10.0.0",
     "oauth-cli-kit>=0.1.6,<1.0.0",
     "loguru>=0.7.3,<1.0.0",
