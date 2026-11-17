@@ -220,6 +220,24 @@ def test_resolve_url_target_does_not_delegate_local_targets(url: str):
     assert not ok
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://a..b/",                  # empty IDNA label
+        "http://" + "a" * 64 + ".com/",  # overlong IDNA label
+    ],
+)
+def test_resolve_url_target_rejects_idna_invalid_hostname(url: str):
+    # socket.getaddrinfo raises UnicodeError (not socket.gaierror) for
+    # hostnames that fail IDNA encoding; it must be converted to the normal
+    # rejection path instead of escaping.
+    ok, err, resolved_ips = resolve_url_target(url)
+
+    assert not ok
+    assert err
+    assert resolved_ips == ()
+
+
 @pytest.mark.parametrize("host", ["example.com", b"example.com", "EXAMPLE.COM.", b"EXAMPLE.COM."])
 def test_pin_resolved_url_dns_prevents_second_resolution_rebind(host):
     def _rebinding_resolver(hostname, port, family=0, type_=0, proto=0, flags=0):
