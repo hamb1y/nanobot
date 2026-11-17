@@ -111,7 +111,9 @@ def resolve_url_target(
 
     try:
         infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
+    except (socket.gaierror, UnicodeError):
+        # UnicodeError covers IDNA encoding failures (e.g. empty or overly
+        # long labels) that getaddrinfo raises before DNS is ever queried.
         if not trust_remote_dns:
             return False, f"Cannot resolve hostname: {hostname}", ()
 
@@ -305,7 +307,8 @@ def validate_resolved_url(url: str) -> tuple[bool, str]:
     except ValueError:
         try:
             infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        except socket.gaierror:
+        except (socket.gaierror, UnicodeError):
+            # Unresolvable (including IDNA-invalid) hostnames are delegated as-is.
             return True, ""
         for info in infos:
             try:
