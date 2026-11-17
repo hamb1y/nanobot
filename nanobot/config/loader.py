@@ -86,6 +86,16 @@ def load_config(config_path: Path | None = None) -> Config:
             kind="io_error",
             summary="The file is not valid UTF-8.",
         ) from exc
+    except ValueError as exc:
+        # Catches plain ValueErrors from json (json.JSONDecodeError is
+        # subclassed and handled above), e.g. integer literals that exceed
+        # CPython's int<->str conversion limit (~4300 digits). Must stay
+        # after UnicodeDecodeError, which is itself a ValueError subclass.
+        raise ConfigLoadError(
+            path,
+            kind="invalid_json",
+            summary=f"The JSON could not be parsed: {_sentence(str(exc))}",
+        ) from exc
     except OSError as exc:
         detail = exc.strerror or type(exc).__name__
         raise ConfigLoadError(
