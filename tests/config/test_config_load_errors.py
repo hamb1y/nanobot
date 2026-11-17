@@ -57,6 +57,35 @@ def test_load_config_invalid_json_fails_fast(tmp_path) -> None:
     assert "line 1, column 2" in str(error)
 
 
+def test_load_config_huge_integer_literal_is_wrapped(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"providers": {"anthropic": {"maxTokens": ' + "9" * 5000 + "}}}",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_config(config_path)
+
+    error = exc_info.value
+    assert error.kind == "invalid_json"
+    assert "JSON could not be parsed" in str(error)
+
+
+def test_load_config_non_utf8_file_maps_to_io_error(tmp_path) -> None:
+    # UnicodeDecodeError subclasses ValueError; it must still be reported
+    # as an io_error, not swallowed by the invalid_json ValueError handler.
+    config_path = tmp_path / "config.json"
+    config_path.write_bytes(b'{"providers": {}} \xff\xfe')
+
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_config(config_path)
+
+    error = exc_info.value
+    assert error.kind == "io_error"
+    assert "not valid UTF-8" in str(error)
+
+
 def test_load_config_invalid_schema_fails_fast(tmp_path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(
