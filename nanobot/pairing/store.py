@@ -34,6 +34,15 @@ def _store_path() -> Path:
     return get_data_dir() / "pairing.json"
 
 
+def _mask_code(code: str) -> str:
+    """Return a masked pairing code safe for INFO-level logs.
+
+    Keeps only the first four characters so a bystander with log access
+    cannot read a pending code.
+    """
+    return code[:4] + "*" * (len(code) - 4)
+
+
 def _load() -> dict[str, Any]:
     path = _store_path()
     try:
@@ -147,7 +156,7 @@ def generate_code(
             "expires_at": time.time() + ttl,
         }
         _save(data)
-        logger.info("Generated pairing code {} for {}@{}", code, sender_id, channel)
+        logger.info("Generated pairing code {} for {}@{}", _mask_code(code), sender_id, channel)
     _notify_changed(on_change)
     return code
 
@@ -196,7 +205,7 @@ def approve_code(
         sender_id = str(info["sender_id"])
         data.setdefault("approved", {}).setdefault(channel, set()).add(sender_id)
         _save(data)
-        logger.info("Approved pairing code {} for {}@{}", code, sender_id, channel)
+        logger.info("Approved pairing code {} for {}@{}", _mask_code(code), sender_id, channel)
     _notify_changed(on_change)
     return channel, sender_id
 
@@ -214,7 +223,7 @@ def deny_code(code: str, *, on_change: Callable[[], object] | None = None) -> bo
             return False
         del pending[code]
         _save(data)
-        logger.info("Denied pairing code {}", code)
+        logger.info("Denied pairing code {}", _mask_code(code))
     _notify_changed(on_change)
     return True
 

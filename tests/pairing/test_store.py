@@ -286,6 +286,32 @@ class TestNonStringSenderId:
         assert store.is_approved("telegram", "12345") is False
 
 
+class TestLogMasking:
+    def test_full_codes_never_logged_at_info_level(self, monkeypatch):
+        """A pending pairing code must not be readable from INFO logs."""
+        import logging
+
+        lines: list[str] = []
+
+        class _Sink(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                lines.append(record.getMessage())
+
+        from loguru import logger as loguru_logger
+
+        loguru_logger.add(_Sink(), level="INFO")
+        monkeypatch.setattr(store, "logger", loguru_logger)
+
+        code = store.generate_code("telegram", "123")
+        store.approve_code(code)
+        store.generate_code("telegram", "456")
+        store.deny_code(store.list_pending()[0]["code"])
+
+        joined = "\n".join(lines)
+        assert code not in joined
+        assert "*" in joined  # masked codes are shown instead
+
+
 class TestStoreDurability:
     def test_corruption_recovery(self, tmp_path, monkeypatch) -> None:
         path = tmp_path / "pairing.json"
